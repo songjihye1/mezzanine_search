@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>네이버 메자닌 채권 검색</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Inter 폰트 적용 */
+        body {
+            font-family: "Inter", sans-serif;
+        }
+        /* 로딩 스피너 애니메이션 */
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-blue-100 to-purple-200 flex items-center justify-center p-4">
+    <div class="bg-white p-8 rounded-2xl shadow-xl max-w-2xl w-full">
+        <h1 class="text-3xl font-extrabold text-gray-800 mb-6 text-center">
+            <span class="text-blue-600">네이버</span> <span class="text-purple-600">메자닌 채권</span> 검색
+        </h1>
+
+        <div class="mb-6">
+            <input
+                type="text"
+                id="searchText"
+                class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 placeholder-gray-400"
+                placeholder="추가 질문을 입력하세요 (예: 정의, 특징, 장점)"
+            />
+        </div>
+
+        <button
+            id="searchButton"
+            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus="ring-blue-500 focus:ring-opacity-50"
+        >
+            <div id="buttonContent" class="flex items-center justify-center">
+                정보 검색
+            </div>
+        </button>
+
+        <div id="searchResults" class="mt-8 p-6 bg-gray-50 rounded-lg border border-gray-200 shadow-inner hidden">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">검색 결과:</h2>
+            <div id="resultContent" class="prose prose-sm max-w-none text-gray-800 leading-relaxed"></div>
+        </div>
+    </div>
+
+    <script>
+        const searchText = document.getElementById('searchText');
+        const searchButton = document.getElementById('searchButton');
+        const buttonContent = document.getElementById('buttonContent');
+        const searchResultsDiv = document.getElementById('searchResults');
+        const resultContent = document.getElementById('resultContent');
+
+        let isLoading = false; // 로딩 상태 관리
+
+        // Gemini API 호출 함수
+        async function fetchGeminiResponse(prompt) {
+            isLoading = true;
+            searchButton.disabled = true; // 버튼 비활성화
+            buttonContent.innerHTML = `
+                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                검색 중...
+            `;
+            searchResultsDiv.classList.add('hidden'); // 이전 결과 숨기기
+            resultContent.innerHTML = ''; // 이전 결과 초기화
+
+            let chatHistory = [];
+            chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+
+            const payload = { contents: chatHistory };
+            // 중요: 여기에 본인의 Gemini API 키를 붙여넣으세요.
+            // Google AI Studio에서 발급받은 키를 사용해야 합니다.
+            const apiKey = "AIzaSyBmaHdOmJts1MRUYb5yCopqTUAeUpWC7d8"; 
+
+            // 지수 백오프를 사용하여 API 호출 재시도
+            const maxRetries = 5;
+            let retries = 0;
+            let delay = 1000; // 초기 지연 1초
+
+            while (retries < maxRetries) {
+                try {
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        if (response.status === 429) {
+                            console.warn(`API 요청 제한 초과. ${delay / 1000}초 후 재시도...`);
+                            await new Promise(res => setTimeout(res, delay));
+                            delay *= 2;
+                            retries++;
+                            continue;
+                        } else {
+                            throw new Error(`HTTP 오류! 상태: ${response.status}`);
+                        }
+                    }
+
+                    const result = await response.json();
+
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        const text = result.candidates[0].content.parts[0].text;
+                        resultContent.innerHTML = text.replace(/\n/g, '<br />'); // 줄바꿈 적용
+                        searchResultsDiv.classList.remove('hidden'); // 결과 표시
+                    } else {
+                        resultContent.innerHTML = "결과를 찾을 수 없습니다.";
+                        searchResultsDiv.classList.remove('hidden');
+                    }
+                    break;
+                } catch (error) {
+                    console.error("Gemini API 호출 중 오류 발생:", error);
+                    resultContent.innerHTML = "API 호출 중 오류가 발생했습니다.";
+                    searchResultsDiv.classList.remove('hidden');
+                    break;
+                } finally {
+                    isLoading = false;
+                    searchButton.disabled = false; // 버튼 활성화
+                    buttonContent.innerHTML = '정보 검색'; // 버튼 텍스트 복원
+                }
+            }
+
+            if (retries === maxRetries) {
+                resultContent.innerHTML = "API 호출이 너무 많아 실패했습니다. 나중에 다시 시도해주세요.";
+                searchResultsDiv.classList.remove('hidden');
+                isLoading = false;
+                searchButton.disabled = false;
+                buttonContent.innerHTML = '정보 검색';
+            }
+        }
+
+        function handleSearch() {
+            const query = searchText.value.trim();
+            if (query === '') {
+                resultContent.innerHTML = '검색어를 입력해주세요.';
+                searchResultsDiv.classList.remove('hidden');
+                return;
+            }
+            const specificPrompt = `네이버 메자닌 채권에 대해 자세히 설명해 주세요. ${query}와 관련된 정보도 포함해 주세요.`;
+            fetchGeminiResponse(specificPrompt);
+        }
+
+        // 이벤트 리스너
+        searchButton.addEventListener('click', handleSearch);
+        searchText.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleSearch();
+            }
+        });
+    </script>
+</body>
+</html>
